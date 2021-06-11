@@ -1,0 +1,50 @@
+version: "3.2"
+
+services:
+  zk1:
+    image: jplock/zookeeper:3.4.10
+    ports:
+      - "2181:2181"
+  solr1:
+    image: solr:8.8.2
+    ports:
+      - "8983:8983"
+    volumes:
+      - ./wait-for-it.sh:/usr/bin/wait-for-it.sh
+      - ./grafana-register.sh:/opt/grafana-register.sh
+      - ./solr-dashboard.json:/opt/solr-dashboard.json
+    command: /bin/bash -c "/usr/bin/wait-for-it.sh -h zk1 -p 2181 -t 0 && /usr/bin/wait-for-it.sh -h grafana -p 3000 -t 0 && cd /opt && /opt/grafana-register.sh; /opt/solr/bin/solr -c -f -z zk1:2181 -m 4g"
+    links:
+      - grafana
+  solr2:
+    image: solr:8.8.2
+    volumes:
+      - ./wait-for-it.sh:/usr/bin/wait-for-it.sh
+    command: /bin/bash -c "/usr/bin/wait-for-it.sh -h zk1 -p 2181 -t 0; /opt/solr/bin/solr -c -f -z zk1:2181 -m 4g"
+
+  solr3:
+    image: solr:8.8.2
+    volumes:
+      - ./wait-for-it.sh:/usr/bin/wait-for-it.sh
+    command: /bin/bash -c "/usr/bin/wait-for-it.sh -h zk1 -p 2181 -t 0; /opt/solr/bin/solr -c -f -z zk1:2181 -m 4g"
+  
+  solr-exporter:
+    image: solr:8.8.2
+    volumes:
+      - ./wait-for-it.sh:/usr/bin/wait-for-it.sh
+    command: /bin/bash -c "/usr/bin/wait-for-it.sh -h solr1 -p 8983 -t 0 && /opt/solr/contrib/prometheus-exporter/bin/solr-exporter -p 9854 -z zk1:2181 -f /opt/solr/contrib/prometheus-exporter/conf/solr-exporter-config.xml -n 2"
+
+  prometheus:
+    image: prom/prometheus:v2.27.1
+    volumes:
+      - ./prometheus.yml:/prometheus/prometheus.yml
+    command:
+      - '--config.file=/prometheus/prometheus.yml'
+    ports:
+      - 9090:9090
+    restart: always
+
+  grafana:
+    image: grafana/grafana:7.0.4
+    ports:
+      - "3000:3000"
